@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AstroML — Exoplanet Transit Classifier</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f2ec;
+  --s1:#ffffff;
+  --s2:#f0ece4;
+  --bd:#d8d0c4;
+  --bd2:#c4bab0;
+  --acc:#1a3a6b;       /* navy blue — accent */
+  --accd:rgba(26,58,107,0.08);
+  --gn:#2a6e3f;        /* forest green */
+  --am:#a05c00;        /* amber/brown */
+  --rd:#a0272a;        /* deep red */
+  --tx:#1c1a17;
+  --tm:#7a6e62;
+  --mono:'Space Mono',monospace;
+  --serif:'Crimson Pro',Georgia,serif;
+  --sans:'DM Sans',sans-serif;
+}
+
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:14px;min-height:100vh}
+
+/* Paper texture overlay */
+body::before{
+  content:'';
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  pointer-events:none;z-index:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity:.5;
+}
+
+.wrap{position:relative;z-index:1;padding:2rem 1.5rem;max-width:900px;margin:0 auto}
+
+/* ── Header ── */
+.header{margin-bottom:1.6rem;border-bottom:1px solid var(--bd2);padding-bottom:1.2rem}
+.course-tag{font-family:var(--mono);font-size:8px;color:var(--tm);letter-spacing:.22em;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.course-tag::before{content:'';display:inline-block;width:22px;height:1px;background:var(--bd2)}
+.title-block{display:flex;align-items:flex-start;gap:14px;margin-bottom:8px}
+.title-num{font-family:var(--mono);font-size:10px;color:var(--acc);opacity:.55;margin-top:5px;flex-shrink:0}
+h1{font-family:var(--serif);font-size:28px;font-weight:600;letter-spacing:-.01em;line-height:1.2;color:var(--tx)}
+h1 em{font-style:italic;color:var(--acc)}
+.authors{font-family:var(--serif);font-size:13px;color:var(--tm);font-style:italic;margin-top:4px}
+.abstract{font-family:var(--serif);font-size:14px;line-height:1.8;color:#5a5248;margin-top:12px;max-width:680px;font-weight:300}
+.abstract strong{font-weight:600;color:var(--tx);font-style:normal}
+
+/* ── Pipeline ── */
+.pipeline{display:flex;align-items:center;gap:0;margin-bottom:1.2rem;overflow-x:auto;padding-bottom:4px}
+.ps{font-family:var(--mono);font-size:8px;color:var(--tm);background:var(--s1);border:1px solid var(--bd);border-radius:4px;padding:4px 9px;white-space:nowrap;transition:color .3s,border-color .3s,background .3s}
+.ps.done{color:var(--acc);border-color:rgba(26,58,107,.35);background:rgba(26,58,107,.06)}
+.parr{font-size:9px;color:var(--bd2);padding:0 3px;flex-shrink:0}
+
+/* ── Layout ── */
+.main{display:grid;grid-template-columns:235px 1fr;gap:14px;margin-bottom:14px}
+.panel{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:1.1rem;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.ptitle{font-family:var(--mono);font-size:8px;color:var(--acc);letter-spacing:.15em;text-transform:uppercase;margin-bottom:.85rem;padding-bottom:6px;border-bottom:1px solid var(--bd)}
+
+/* ── Controls ── */
+label{display:block;font-size:10px;color:var(--tm);margin-bottom:3px;font-family:var(--mono);letter-spacing:.04em}
+select{width:100%;background:var(--s2);border:1px solid var(--bd);color:var(--tx);padding:6px 8px;border-radius:5px;font-size:11px;font-family:var(--mono);cursor:pointer;margin-bottom:10px;appearance:none;-webkit-appearance:none}
+input[type=range]{accent-color:var(--acc)}
+.rrow{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.rrow input{flex:1;margin:0}
+.rv{font-family:var(--mono);font-size:10px;color:var(--acc);min-width:38px;text-align:right;font-weight:700}
+
+.runbtn{width:100%;padding:9px;background:var(--accd);border:1px solid var(--acc);color:var(--acc);border-radius:5px;font-family:var(--mono);font-size:10px;cursor:pointer;letter-spacing:.1em;transition:background .2s;margin-top:4px}
+.runbtn:hover{background:rgba(26,58,107,.15)}
+.gbtn{background:rgba(42,110,63,.08);border-color:var(--gn);color:var(--gn)}
+.gbtn:hover{background:rgba(42,110,63,.16)}
+
+/* ── Plots ── */
+.plots{display:flex;flex-direction:column;gap:12px}
+canvas{display:block;width:100%;border-radius:5px}
+
+/* ── ML output ── */
+.dbadge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:3px;font-family:var(--mono);font-size:10px;font-weight:700;margin-bottom:8px}
+.bd-ok{background:rgba(42,110,63,.1);color:var(--gn);border:1px solid rgba(42,110,63,.3)}
+.bd-cand{background:rgba(160,92,0,.1);color:var(--am);border:1px solid rgba(160,92,0,.3)}
+.bd-no{background:rgba(160,39,42,.08);color:var(--rd);border:1px solid rgba(160,39,42,.25)}
+.dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
+.cbar{background:var(--s2);border-radius:3px;height:4px;overflow:hidden;margin-bottom:10px;border:1px solid var(--bd)}
+.cfill{height:100%;border-radius:3px;background:var(--acc);transition:width .6s ease,background .4s}
+.mgrid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.mc{background:var(--s2);border:1px solid var(--bd);border-radius:6px;padding:8px 10px}
+.ml{font-family:var(--mono);font-size:7.5px;color:var(--tm);letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px}
+.mv{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--acc)}
+
+/* ── AI Report ── */
+.report-panel{margin-bottom:12px}
+.report-inner{background:var(--s1);border:1px solid var(--bd);border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.report-header{padding:.85rem 1.1rem;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:var(--s2)}
+.report-label{font-family:var(--mono);font-size:8px;color:var(--acc);letter-spacing:.15em;text-transform:uppercase}
+.report-meta{font-family:var(--mono);font-size:7.5px;color:var(--tm);letter-spacing:.05em;margin-top:3px}
+.report-body{padding:1.2rem 1.3rem}
+
+.paper-out{
+  font-family:var(--serif);
+  font-size:15.5px;
+  line-height:1.9;
+  color:var(--tx);
+  font-weight:300;
+  min-height:80px;
+  border-left:2px solid var(--bd2);
+  padding-left:1rem;
+  transition:border-color .4s;
+}
+.paper-out.idle{color:var(--tm);font-style:italic;font-size:14px}
+.paper-out.typing::after{content:'▋';font-family:var(--mono);font-size:11px;color:var(--acc);animation:blink .65s infinite}
+.paper-out.has-text{border-color:var(--acc)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+.report-footer{padding:.7rem 1.1rem;border-top:1px solid var(--bd);background:var(--s2);display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+.section-label{font-family:var(--serif);font-size:11.5px;font-style:italic;color:var(--tm)}
+
+.err{color:var(--rd);font-style:italic}
+
+/* ── Footnote ── */
+.footnote{font-family:var(--serif);font-size:12px;color:var(--tm);font-style:italic;text-align:center;padding-top:1.2rem;border-top:1px solid var(--bd);margin-top:8px}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<div class="header">
+  <div class="title-block">
+    <div class="title-num">§ 1</div>
+    <div>
+      <h1>AstroML — <em>Exoplanet Transit Classifier</em></h1>
+    </div>
+  </div>
+  <div class="abstract">
+    <strong>Abstract.</strong> This tool simulates a complete transit-detection pipeline modelled on NASA's TESS mission. Synthetic stellar light curves are generated with configurable photon noise, searched via Box Least Squares (BLS) periodogram, and classified by a simulated CNN scorer. An AI module produces a peer-review-style interpretation of each detection result.
+  </div>
+</div>
+
+<div class="pipeline">
+  <div class="ps" id="ps1">① Raw photometry</div><div class="parr">→</div>
+  <div class="ps" id="ps2">② Noise model</div><div class="parr">→</div>
+  <div class="ps" id="ps3">③ BLS search</div><div class="parr">→</div>
+  <div class="ps" id="ps4">④ CNN classify</div><div class="parr">→</div>
+  <div class="ps" id="ps5">⑤ AI report</div>
+</div>
+
+<div class="main">
+  <div>
+    <div class="panel">
+      <div class="ptitle">System Parameters</div>
+      <label>Host star type</label>
+      <select id="starType">
+        <option value="g">G-type (Sun-like, 1.0 R☉)</option>
+        <option value="k">K-type (orange, 0.75 R☉)</option>
+        <option value="m">M-dwarf (cool, 0.35 R☉)</option>
+        <option value="f">F-type (hot, 1.45 R☉)</option>
+      </select>
+      <label>Planet archetype</label>
+      <select id="preset" onchange="applyPreset()">
+        <option value="hj">Hot Jupiter (gas giant)</option>
+        <option value="se">Super-Earth (rocky)</option>
+        <option value="mn">Mini-Neptune</option>
+        <option value="ea">Earth-analog</option>
+      </select>
+      <label>Orbital period (days)</label>
+      <div class="rrow"><input type="range" id="rPeriod" min="0.5" max="18" step="0.1" value="3.5"><span class="rv" id="vPeriod">3.5d</span></div>
+      <label>Radius ratio Rp / Rs</label>
+      <div class="rrow"><input type="range" id="rRpRs" min="0.005" max="0.22" step="0.005" value="0.13"><span class="rv" id="vRpRs">0.130</span></div>
+      <label>Photon noise (ppm)</label>
+      <div class="rrow"><input type="range" id="rNoise" min="50" max="2500" step="50" value="400"><span class="rv" id="vNoise">400</span></div>
+      <button class="runbtn" onclick="runPipeline()">▶ RUN PIPELINE</button>
+    </div>
+
+    <div class="panel" style="margin-top:12px">
+      <div class="ptitle">ML Classification Output</div>
+      <div id="badge" class="dbadge bd-no"><div class="dot"></div><span>AWAITING INPUT</span></div>
+      <div class="cbar"><div class="cfill" id="cfill" style="width:0%"></div></div>
+      <div class="mgrid">
+        <div class="mc"><div class="ml">Period</div><div class="mv" id="mP">—</div></div>
+        <div class="mc"><div class="ml">Depth ppm</div><div class="mv" id="mD">—</div></div>
+        <div class="mc"><div class="ml">Rp / Rs</div><div class="mv" id="mR">—</div></div>
+        <div class="mc"><div class="ml">Planet radius</div><div class="mv" id="mE">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="plots">
+    <div class="panel" style="padding:.9rem">
+      <div class="ptitle">Light curve — 27.4 day TESS sector photometry</div>
+      <canvas id="lcC" height="160"></canvas>
+    </div>
+    <div class="panel" style="padding:.9rem">
+      <div class="ptitle">BLS periodogram &amp; phase-folded transit</div>
+      <canvas id="blsC" height="160"></canvas>
+    </div>
+  </div>
+</div>
+
+<div class="report-panel">
+  <div class="report-inner">
+    <div class="report-header">
+      <div>
+        <div class="report-label">§ 5 — Scientific Interpretation</div>
+
+      </div>
+      <button class="runbtn gbtn" style="width:auto;padding:7px 16px;font-size:9px;margin-top:0" onclick="doAIReport()">✦ Generate Report</button>
+    </div>
+    <div class="report-body">
+      <div class="paper-out idle" id="aiOut">Run the pipeline above, then click <em>Generate Report</em> — a four-sentence analysis will appear here.</div>
+    </div>
+    <div class="report-footer">
+      <div class="section-label" id="reportStatus">No result yet</div>
+    </div>
+  </div>
+</div>
+
+<div class="footnote">
+  AstroML Transit Classifier · synthetic data only · not affiliated with NASA or the TESS mission
+</div>
+
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+// Sliders
+$('rPeriod').oninput=()=>$('vPeriod').textContent=parseFloat($('rPeriod').value).toFixed(1)+'d';
+$('rRpRs').oninput=()=>$('vRpRs').textContent=parseFloat($('rRpRs').value).toFixed(3);
+$('rNoise').oninput=()=>$('vNoise').textContent=$('rNoise').value;
+
+const presets={
+  hj:{period:3.5,rprs:0.13,noise:400},
+  se:{period:9,rprs:0.025,noise:700},
+  mn:{period:6,rprs:0.058,noise:550},
+  ea:{period:15,rprs:0.009,noise:150}
+};
+function applyPreset(){
+  const p=presets[$('preset').value];
+  $('rPeriod').value=p.period;$('vPeriod').textContent=p.period.toFixed(1)+'d';
+  $('rRpRs').value=p.rprs;$('vRpRs').textContent=p.rprs.toFixed(3);
+  $('rNoise').value=p.noise;$('vNoise').textContent=p.noise;
+}
+
+function randn(){
+  let u=0,v=0;
+  while(!u)u=Math.random();while(!v)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function genLC(period,rprs,noisePpm){
+  const N=900,tspan=27.4,nSc=noisePpm/1e6;
+  const depth=rprs*rprs;
+  const dur=0.14*Math.cbrt(period);
+  const t0=period*Math.random();
+  const t=[],f=[],ftrue=[];
+  for(let i=0;i<N;i++){
+    const ti=i/N*tspan;
+    let tr=1;
+    const ph=((ti-t0)%period+period)%period;
+    const dp=Math.min(ph,period-ph);
+    if(dp<dur/2){const x2=dp/(dur/2);tr=1-depth*Math.max(0,1-x2*x2);}
+    t.push(ti);ftrue.push(tr);f.push(tr+randn()*nSc);
+  }
+  return{t,f,ftrue,period,rprs,depth,dur,t0,noisePpm};
+}
+
+function bls(t,f,periods){
+  return periods.map(p=>{
+    let best=0;
+    for(let dur=0.03;dur<0.45;dur+=0.06){
+      const folded=t.map((ti,i)=>[((ti%p)+p)%p,f[i]]).sort((a,b)=>a[0]-b[0]);
+      for(let phi=0;phi<1;phi+=0.07){
+        const inn=folded.filter(x=>x[0]>=phi&&x[0]<phi+dur);
+        const out=folded.filter(x=>x[0]<phi||x[0]>=phi+dur);
+        if(inn.length<3||out.length<8)continue;
+        const mi=inn.reduce((s,x)=>s+x[1],0)/inn.length;
+        const mo=out.reduce((s,x)=>s+x[1],0)/out.length;
+        const s=(mo-mi)*Math.sqrt(inn.length);
+        if(s>best)best=s;
+      }
+    }
+    return best;
+  });
+}
+
+function phaseFold(t,f,period,t0){
+  return t.map((ti,i)=>{
+    let ph=((ti-t0)%period+period)%period;
+    if(ph>period/2)ph-=period;
+    return{ph,f:f[i]};
+  }).sort((a,b)=>a.ph-b.ph);
+}
+
+// Draw — light theme colours
+const C_BG='#f8f5ef';
+const C_GRID='#ddd6cc';
+const C_DOTS='rgba(30,60,120,0.35)';
+const C_LINE='rgba(26,58,107,0.7)';
+const C_MODEL='rgba(26,58,107,0.3)';
+const C_PEAK='#2a6e3f';
+const C_AXIS='#8a7e74';
+
+function drawLC(lc){
+  const cv=$('lcC');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=cv.offsetWidth*dpr;cv.height=160*dpr;
+  const ctx=cv.getContext('2d');
+  ctx.scale(dpr,dpr);
+  const W=cv.offsetWidth,H=160;
+  const pl=38,pr=8,pt=10,pb=26;
+  const pw=W-pl-pr,ph=H-pt-pb;
+  const fMin=Math.min(...lc.f)-.0001,fMax=Math.max(...lc.f)+.0001;
+  const tMax=lc.t[lc.t.length-1];
+  const tx=t=>pl+(t/tMax)*pw;
+  const ty=f=>pt+(1-(f-fMin)/(fMax-fMin))*ph;
+
+  ctx.fillStyle=C_BG;ctx.fillRect(0,0,W,H);
+  for(let i=0;i<=3;i++){
+    const y=pt+i*ph/3;
+    ctx.strokeStyle=C_GRID;ctx.lineWidth=.5;
+    ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(pl+pw,y);ctx.stroke();
+  }
+  ctx.beginPath();ctx.strokeStyle=C_MODEL;ctx.lineWidth=1.5;
+  lc.t.forEach((ti,i)=>{const x=tx(ti),y=ty(lc.ftrue[i]);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.stroke();
+  lc.f.forEach((fi,i)=>{
+    const x=tx(lc.t[i]),y=ty(fi);
+    ctx.beginPath();ctx.arc(x,y,.9,0,Math.PI*2);
+    ctx.fillStyle=C_DOTS;ctx.fill();
+  });
+  ctx.fillStyle=C_AXIS;ctx.font=`9px 'Space Mono',monospace`;
+  ctx.fillText('Flux',1,pt+6);
+  ctx.fillText('Time (days)',pl+pw/2-24,H-2);
+  for(let i=0;i<=5;i++){const t=i*tMax/5;ctx.fillText(Math.round(t),tx(t)-5,H-4);}
+}
+
+function drawBLS(lc,periods,power,bestP){
+  const cv=$('blsC');
+  const dpr=window.devicePixelRatio||1;
+  cv.width=cv.offsetWidth*dpr;cv.height=160*dpr;
+  const ctx=cv.getContext('2d');
+  ctx.scale(dpr,dpr);
+  const W=cv.offsetWidth,H=160;
+  const pl=38,pr=6,pt=10,pb=26;
+  const pw=W-pl-pr,ph=H-pt-pb;
+  const gap=18,hw=(pw-gap)/2;
+
+  ctx.fillStyle=C_BG;ctx.fillRect(0,0,W,H);
+
+  const pMax=Math.max(...power)+.001;
+  const txB=p=>pl+((p-periods[0])/(periods[periods.length-1]-periods[0]))*hw;
+  const tyB=v=>pt+(1-v/pMax)*ph;
+  for(let i=0;i<=3;i++){const y=pt+i*ph/3;ctx.strokeStyle=C_GRID;ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(pl,y);ctx.lineTo(pl+hw,y);ctx.stroke();}
+  ctx.beginPath();ctx.strokeStyle=C_LINE;ctx.lineWidth=1.2;
+  periods.forEach((p,i)=>{const x=txB(p),y=tyB(power[i]);i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);});
+  ctx.stroke();
+  const bi=periods.reduce((mi,p,i)=>Math.abs(p-bestP)<Math.abs(periods[mi]-bestP)?i:mi,0);
+  const bx=txB(periods[bi]);
+  ctx.strokeStyle=C_PEAK;ctx.lineWidth=1.2;ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(bx,pt);ctx.lineTo(bx,pt+ph);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=C_PEAK;ctx.font=`9px 'Space Mono',monospace`;
+  ctx.fillText(bestP.toFixed(1)+'d',bx+3,pt+14);
+  ctx.fillStyle=C_AXIS;
+  ctx.fillText('BLS power',pl+2,pt+11);
+  for(let i=0;i<=3;i++){const p=periods[0]+i*(periods[periods.length-1]-periods[0])/3;ctx.fillText(p.toFixed(0),txB(p)-4,H-4);}
+
+  const ox=pl+hw+gap;
+  const folded=phaseFold(lc.t,lc.f,bestP,lc.t0);
+  const fMin=Math.min(...folded.map(x=>x.f))-.0001;
+  const fMax=Math.max(...folded.map(x=>x.f))+.0001;
+  const txF=ph2=>ox+((ph2+bestP/2)/bestP)*hw;
+  const tyF=f=>pt+(1-(f-fMin)/(fMax-fMin))*ph;
+  for(let i=0;i<=3;i++){const y=pt+i*ph/3;ctx.strokeStyle=C_GRID;ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(ox,y);ctx.lineTo(ox+hw,y);ctx.stroke();}
+  folded.forEach(pt2=>{
+    const x=txF(pt2.ph),y=tyF(pt2.f);
+    ctx.beginPath();ctx.arc(x,y,.9,0,Math.PI*2);
+    ctx.fillStyle=C_DOTS;ctx.fill();
+  });
+  ctx.beginPath();ctx.strokeStyle=C_MODEL;ctx.lineWidth=1.5;
+  const steps=60;
+  for(let i=0;i<=steps;i++){
+    const p2=(-bestP/2)+(i/steps)*bestP;
+    const dp=Math.abs(p2);
+    let fl=1;
+    if(dp<lc.dur/2){const xv=dp/(lc.dur/2);fl=1-lc.depth*Math.max(0,1-xv*xv);}
+    const x=txF(p2),y=tyF(fl);
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle=C_AXIS;ctx.font=`9px 'Space Mono',monospace`;
+  ctx.fillText('Phase-folded',ox+2,pt+11);
+}
+
+let state=null;
+
+async function runPipeline(){
+  ['ps1','ps2','ps3','ps4'].forEach(id=>$(id).classList.remove('done'));
+  const period=parseFloat($('rPeriod').value);
+  const rprs=parseFloat($('rRpRs').value);
+  const noise=parseInt($('rNoise').value);
+
+  $('ps1').classList.add('done');
+  const lc=genLC(period,rprs,noise);
+  drawLC(lc);
+  await sleep(250);
+
+  $('ps2').classList.add('done');
+  await sleep(200);
+
+  $('ps3').classList.add('done');
+  const periods=Array.from({length:45},(_,i)=>0.4+i*0.42);
+  const power=bls(lc.t,lc.f,periods);
+  const bestIdx=power.indexOf(Math.max(...power));
+  const bestP=periods[bestIdx];
+  drawBLS(lc,periods,power,bestP);
+  await sleep(250);
+
+  $('ps4').classList.add('done');
+  const snr=(lc.depth*1e6)/noise;
+  const pMatch=Math.abs(bestP-period)/period<0.28;
+  let label,cls,conf;
+  if(snr>9&&pMatch){label='PLANET DETECTED';cls='bd-ok';conf=Math.min(98,68+snr*1.5);}
+  else if(snr>4){label='CANDIDATE';cls='bd-cand';conf=35+snr*4;}
+  else{label='NO SIGNAL';cls='bd-no';conf=Math.max(3,snr*5);}
+  conf=Math.round(Math.min(98,Math.max(3,conf)));
+
+  const b=$('badge');
+  b.className='dbadge '+cls;
+  b.innerHTML=`<div class="dot"></div>${label} — ${conf}% conf.`;
+  $('cfill').style.width=conf+'%';
+  $('cfill').style.background=cls==='bd-ok'?'#2a6e3f':cls==='bd-cand'?'#a05c00':'#a0272a';
+
+  const starR={g:1.0,k:0.75,m:0.35,f:1.45}[$('starType').value];
+  const re=(rprs*starR*109.2).toFixed(1);
+  $('mP').textContent=bestP.toFixed(2)+'d';
+  $('mD').textContent=Math.round(lc.depth*1e6);
+  $('mR').textContent=rprs.toFixed(3);
+  $('mE').textContent=re+'R⊕';
+
+  const starLabel={g:'G-type (Sun-like)',k:'K-type (orange dwarf)',m:'M-dwarf',f:'F-type (hot star)'}[$('starType').value];
+  state={label,conf,period:bestP,truePeriod:period,depth:Math.round(lc.depth*1e6),rprs,re,snr:snr.toFixed(1),noise,starLabel};
+
+  $('aiOut').textContent='Pipeline complete — click Generate Report for peer-review-style scientific analysis.';
+  $('aiOut').className='paper-out idle';
+  $('reportStatus').textContent='Awaiting report generation';
+}
+
+async function doAIReport(){
+  if(!state){alert('Run the pipeline first.');return;}
+  const el=$('aiOut');
+  el.textContent='';el.className='paper-out typing';
+  $('reportStatus').textContent='Generating…';
+
+  const prompt=`You are an exoplanet scientist reviewing a transit detection pipeline result. Here are the automated pipeline outputs:
+
+Detection status: ${state.label}
+Confidence: ${state.conf}%
+Host star: ${state.starLabel}
+Detected orbital period: ${state.period.toFixed(2)} days
+Transit depth: ${state.depth} ppm
+Radius ratio Rp/Rs: ${state.rprs.toFixed(3)}
+Estimated planet radius: ${state.re} Earth radii
+Signal-to-noise ratio: ${state.snr}
+Photometric noise: ${state.noise} ppm
+
+Write exactly 4 sentences in the style of a Methods or Results section from a peer-reviewed paper (e.g. Nature Astronomy, AJ). Sentence 1: what was detected and the key parameters. Sentence 2: the SNR quality and what it implies about the robustness. Sentence 3: the likely planet type/classification. Sentence 4: what follow-up observation would confirm or reject this candidate. Be technical, precise, and use proper astrophysics terminology.`;
+
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+    const d=await r.json();
+    const txt=d.content.map(b=>b.text||'').join('');
+    el.className='paper-out has-text';el.textContent=txt;
+    $('ps5').classList.add('done');
+    $('reportStatus').textContent='Report generated · '+new Date().toLocaleTimeString();
+  }catch(e){
+    el.className='paper-out err';
+    el.textContent='API error — check connection and try again.';
+    $('reportStatus').textContent='Error';
+  }
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+window.addEventListener('load',()=>{
+  const fakeLc={t:Array.from({length:900},(_,i)=>i*27.4/900),f:Array.from({length:900},()=>1+randn()*.0003),ftrue:Array.from({length:900},()=>1),period:3.5,rprs:.13,depth:.0169,dur:.28,t0:1.2,noisePpm:400};
+  drawLC(fakeLc);
+  const fakeP=Array.from({length:45},(_,i)=>0.4+i*.42);
+  const fakePow=fakeP.map(()=>Math.random()*.05+.01);
+  drawBLS(fakeLc,fakeP,fakePow,3.5);
+});
+</script>
+</body>
+</html>
